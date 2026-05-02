@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bouncing DVD</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #000;
+            overflow: hidden;
+            font-family: 'Arial', sans-serif;
+            cursor: crosshair;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        .ui {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            color: #0f0;
+            text-shadow: 0 0 5px #0f0;
+            font-size: 14px;
+            background: rgba(0,0,0,0.7);
+            padding: 10px 15px;
+            border-radius: 8px;
+            border: 1px solid rgba(0,255,0,0.3);
+        }
+
+        .message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 48px;
+            color: #ff0;
+            text-shadow: 0 0 20px #ff0;
+            pointer-events: none;
+            opacity: 0;
+            animation: none;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+
+        .message.show {
+            animation: popUp 1s ease-out forwards;
+        }
+
+        @keyframes popUp {
+            0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+            20% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+            80% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+            100% { transform: translate(-50%, -50%) scale(0.8); opacity: 0; }
+        }
+
+        .instructions {
+            position: absolute;
+            bottom: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #888;
+            font-size: 12px;
+            text-align: center;
+        }
+
+        .crack-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><path d="M10 10 L30 30 M30 10 L10 30" stroke="rgba(255,255,255,0.3)" stroke-width="2"/></svg>');
+            opacity: 0;
+            transition: opacity 0.5s;
+        }
+
+        .crack-overlay.active {
+            opacity: 1;
+            animation: shake 0.5s;
+        }
+
+        @keyframes shake {
+            0%,100% { transform: translate(0,0); }
+            25% { transform: translate(-5px,5px); }
+            50% { transform: translate(5px,-5px); }
+            75% { transform: translate(-5px,-5px); }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="ui">
+        <div>Hits: <span id="hits">0</span></div>
+        <div>Corners: <span id="corners">0</span></div>
+        <div>Speed: <span id="speed">1.0</span>x</div>
+        <div>Streak: <span id="streak">0</span></div>
+    </div>
+
+    <div class="message" id="message"></div>
+    <div class="crack-overlay" id="crack"></div>
+
+    <div class="instructions">
+        Click to boost • Right-click to reset • Try to hit corners! • It gets faster...
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const hitsEl = document.getElementById('hits');
+        const cornersEl = document.getElementById('corners');
+        const speedEl = document.getElementById('speed');
+        const streakEl = document.getElementById('streak');
+        const messageEl = document.getElementById('message');
+        const crackEl = document.getElementById('crack');
+
+        let width, height;
+        let logo = {
+            text: "DVD",
+            x: 100,
+            y: 100,
+            vx: 4,
+            vy: 3,
+            color: '#ff0000',
+            fontSize: 48,
+            font: 'bold 48px Arial'
+        };
+
+        let hits = 0;
+        let corners = 0;
+        let streak = 0;
+        let maxStreak = 0;
+        let speedMultiplier = 1;
+        let lastHitTime = 0;
+        let messages = [
+            "BOOM!",
+            "NICE!",
+            "CORNER!",
+            "GET REKT",
+            "SAVAGE",
+            "RICK ROLLED! (kinda)",
+            "That's how it's done",
+            "Corner king!",
+            "Unbelievable!",
+            "You're a menace"
+        ];
+        let insults = [
+            "Missed the corner...",
+            "Oof, not even close",
+            "Are you even trying?",
+            "Pathetic",
+            "My grandma bounces better",
+            "Stop clicking randomly",
+            "That was embarrassing",
+            "Corner shy?",
+            "Watch and learn"
+        ];
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        function randomColor() {
+            const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ff8800', '#88ff00', '#00ff88', '#ff0088', '#8800ff', '#0088ff'];
+            return colors[Math.floor(Math.random() * colors.length)];
+        }
+
+        function showMessage(text, isInsult = false) {
+            messageEl.textContent = text;
+            messageEl.style.color = isInsult ? '#ff0000' : '#00ff00';
+            messageEl.classList.remove('show');
+            void messageEl.offsetWidth; // trigger reflow
+            messageEl.classList.add('show');
+            setTimeout(() => messageEl.classList.remove('show'), 1000);
+        }
+
+        function showCrack() {
+            crackEl.classList.add('active');
+            setTimeout(() => crackEl.classList.remove('active'), 500);
+        }
+
+        function updateLogoSize() {
+            logo.fontSize = Math.max(32, 48 + Math.floor(speedMultiplier * 5));
+            logo.font = `bold ${logo.fontSize}px Arial`;
+        }
+
+        function checkCornerHit() {
+            const buffer = 2;
+            const isLeft = logo.x <= buffer;
+            const isRight = logo.x + ctx.measureText(logo.text).width >= width - buffer;
+            const isTop = logo.y <= buffer + logo.fontSize;
+            const isBottom = logo.y >= height - buffer;
+
+            if (isLeft || isRight) logo.vx *= -1;
+            if (isTop || isBottom) logo.vy *= -1;
+
+            // Count corner hits
+            if ((isLeft || isRight) && (isTop || isBottom)) {
+                corners++;
+                cornersEl.textContent = corners;
+                streak++;
+                streakEl.textContent = streak;
+                maxStreak = Math.max(maxStreak, streak);
+                showMessage(messages[Math.floor(Math.random() * messages.length)]);
+                // Speed up slightly
+                speedMultiplier += 0.05;
+                speedEl.textContent = speedMultiplier.toFixed(1);
+                updateLogoSize();
+            } else if (isLeft || isRight || isTop || isBottom) {
+                // Regular wall hit
+                hits++;
+                hitsEl.textContent = hits;
+                streak = 0;
+                streakEl.textContent = 0;
+                // Change color
+                logo.color = randomColor();
+                if (Math.random() < 0.3) {
+                    showMessage(insults[Math.floor(Math.random() * insults.length)], true);
+                }
+            }
+
+            // Ensure within bounds
+            if (logo.x < 0) logo.x = 0;
+            if (logo.y < logo.fontSize) logo.y = logo.fontSize;
+            const textWidth = ctx.measureText(logo.text).width;
+            if (logo.x + textWidth > width) logo.x = width - textWidth;
+            if (logo.y > height) logo.y = height;
+        }
+
+        function animate() {
+            // Fade background slightly
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+            ctx.fillRect(0, 0, width, height);
+
+            // Update position
+            const currentSpeed = speedMultiplier;
+            logo.x += logo.vx * currentSpeed;
+            logo.y += logo.vy * currentSpeed;
+
+            // Check collisions
+            checkCornerHit();
+
+            // Draw logo
+            ctx.font = logo.font;
+            ctx.fillStyle = logo.color;
+            ctx.shadowColor = logo.color;
+            ctx.shadowBlur = 20;
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(logo.text, logo.x, logo.y);
+            ctx.shadowBlur = 0;
+
+            requestAnimationFrame(animate);
+        }
+
+        // Click to boost speed temporarily
+        canvas.addEventListener('click', (e) => {
+            speedMultiplier = Math.min(speedMultiplier + 0.5, 5);
+            speedEl.textContent = speedMultiplier.toFixed(1);
+            updateLogoSize();
+            showMessage("SPEED BOOST!");
+            setTimeout(() => {
+                speedMultiplier = Math.max(1, speedMultiplier - 0.3);
+                speedEl.textContent = speedMultiplier.toFixed(1);
+                updateLogoSize();
+            }, 2000);
+        });
+
+        // Right-click to reset
+        canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            hits = 0;
+            corners = 0;
+            streak = 0;
+            speedMultiplier = 1;
+            logo.x = width / 4;
+            logo.y = height / 2;
+            logo.vx = 4;
+            logo.vy = 3;
+            logo.color = randomColor();
+            hitsEl.textContent = hits;
+            cornersEl.textContent = corners;
+            streakEl.textContent = streak;
+            speedEl.textContent = speedMultiplier.toFixed(1);
+            updateLogoSize();
+            showMessage("RESET");
+        });
+
+        // Start
+        logo.x = width / 4;
+        logo.y = height / 2;
+        animate();
+
+        // Initial greeting
+        setTimeout(() => showMessage("Hit the corners!"), 500);
+    </script>
+</body>
+</html>
